@@ -1,0 +1,52 @@
+/* =====================================================================
+   Responsive breakpoints
+   ===================================================================== */
+
+@media (max-width: 1200px) {
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .dash-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 860px) {
+  :root { --sidebar-width: 0px; }
+  .sidebar { display: none; }
+  .main { margin-left: 0; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .form-row { grid-template-columns: 1fr; }
+  .content { padding: 16px; }
+}
+
+@media (max-width: 520px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  table.data-table { font-size: 12px; }
+  .modal { width: 95%; margin: 10px; }
+}
+
+@media (max-width: 400px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .toolbar select,
+  .toolbar button,
+  .toolbar input {
+    width: 100%;
+  }
+  .modal-footer {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .modal-footer button {
+    width: 100%;
+  }
+  .content {
+    padding: 10px;
+  }
+  .card {
+    padding: 12px;
+  }
+  .btn {
+    min-height: 44px; /* Touch target accessibility */
+  }
+}
