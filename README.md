@@ -46,7 +46,7 @@ A centralized AI-enabled governance platform for coal mining operations — desi
 See [`docs/architecture.md`](docs/architecture.md) for the full breakdown.
 
 ```
-Frontend (HTML/CSS/JS)  →  Go Backend (Gin, JWT, REST)  →  MySQL 8+
+Frontend (HTML/CSS/JS)  →  Go Backend (Gin, JWT, REST)  →  PostgreSQL 16+
                                      ↓
                           Python AI Service (Risk / Anomaly / OCR / Gemini API)
 ```
@@ -57,7 +57,7 @@ Frontend (HTML/CSS/JS)  →  Go Backend (Gin, JWT, REST)  →  MySQL 8+
 |---|---|
 | Frontend | HTML5, CSS3, Vanilla JavaScript, Chart.js, Leaflet.js |
 | Backend | Go + Gin, JWT auth, bcrypt |
-| Database | MySQL 8+ |
+| Database | PostgreSQL 16+ |
 | AI / Analytics | Python 3, Flask, pandas, NumPy, scikit-learn |
 | Generative AI | Google Gemini API (Inspection analysis, voice query assistant, multilingual translation) |
 | OCR | Tesseract OCR / pytesseract |
@@ -87,12 +87,12 @@ Frontend (HTML/CSS/JS)  →  Go Backend (Gin, JWT, REST)  →  MySQL 8+
 - ✅ **Multilingual Voice & Translation Assistant:** Gemini-powered speech-to-text / voice query assistant providing hands-free operational insights and instant multilingual translation of inspection notes (Hindi, Bengali, Odia, etc.).
 - ✅ **Tamper-Evident Audit Logging:** Comprehensive audit logging on all security events, data mutations, and administrative actions with cryptographic SHA-256 hash-chain verification.
 - ✅ **Operational Data Simulator:** Standalone dynamic simulator simulating multi-mine operational data streams across standard, high-risk, and emergency simulation modes with real-time UI control.
-- ✅ **Docker Compose Setup:** Fully containerized multi-container orchestration for MySQL 8+, Go backend, Python AI service, and static frontend via Nginx.
+- ✅ **Docker Compose Setup:** Fully containerized orchestration for PostgreSQL 16+, Go backend, Python AI service, and static frontend via Nginx.
 
 ## Prerequisites
 
 - Go 1.22+
-- MySQL 8.0+
+- PostgreSQL 16+
 - Python 3.10+
 - A modern web browser (frontend is static vanilla JS/HTML/CSS, no node build step required)
 - Optional: Docker + Docker Compose, if you prefer containerized setup
@@ -113,15 +113,19 @@ cp .env.example backend/.env
 # edit backend/.env — set DB_PASSWORD, JWT_SECRET, and GEMINI_API_KEY
 ```
 
-### 2. MySQL setup
+### 2. PostgreSQL setup
 
 ```bash
-mysql -u root -p < database/schema.sql
-mysql -u root -p < database/seed.sql
+createdb -U postgres coal_governance
+psql -U postgres -d coal_governance -f database/schema.sql
+psql -U postgres -d coal_governance -f database/seed.sql
 ```
 
-This creates the `coal_governance` database, all 25 tables, and seeds demo
-users, subsidiaries, mines, and compliance rules.
+This creates the PostgreSQL schema and seeds demo users, subsidiaries, mines,
+and compliance rules. Set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and
+`DB_NAME` in `backend/.env` for the backend. Use `DB_HOST=127.0.0.1` when
+running Go directly on the host; Docker Compose sets `DB_HOST=postgres` for the
+container automatically.
 
 ### 3. Go backend setup
 
@@ -164,6 +168,7 @@ Starts the Flask AI service on `http://localhost:5000` handling risk scoring, an
 ### 6. Simulator
 
 ```bash
+pip install -r requirements-dev.txt
 cd simulator
 python mine_data_generator.py
 ```
@@ -173,14 +178,19 @@ Generates live operational, environmental, and compliance telemetry for active m
 ### 7. Docker Compose (alternative to steps 2–6)
 
 ```bash
-cp .env.example .env   # docker-compose reads DB_PASSWORD / JWT_SECRET / GEMINI_API_KEY from here
+cp .env.example .env   # Docker Compose reads database and application settings here
 docker compose up --build
 ```
 
 - Backend: `http://localhost:8080`
 - Frontend: `http://localhost:8000`
 - AI service: `http://localhost:5000`
-- MySQL: `localhost:3306`
+- PostgreSQL: `localhost:5432`
+
+The PostgreSQL initialization scripts run only when the `postgres_data` volume
+is first created. The existing MySQL database contents are not automatically
+transferred; export and migrate existing data separately before switching a
+production deployment.
 
 ## Demo Credentials
 
@@ -209,7 +219,7 @@ coal-governance/
 ├── frontend/            HTML/CSS/JS dashboard & module pages
 ├── backend/             Go + Gin REST API, middleware, reports & services
 ├── ai-service/          Python AI service (risk engine, anomalies, OCR, Gemini AI)
-├── database/            schema.sql, seed.sql (25 normalized tables & demo seed data)
+├── database/            PostgreSQL schema.sql, seed.sql (normalized tables & demo seed data)
 ├── simulator/           Operational data simulator & dynamic generator
 ├── docs/                architecture.md, api.md, demo-scenario.md
 ├── .env.example         Environment template

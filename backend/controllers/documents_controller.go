@@ -74,8 +74,8 @@ func (dc *DocumentsController) ListDocuments(c *gin.Context) {
 	_, _ = database.DB.Exec(`
 		UPDATE documents 
 		SET status = CASE 
-			WHEN expiry_date < CURDATE() THEN 'EXPIRED'
-			WHEN expiry_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 'EXPIRING_SOON'
+			WHEN expiry_date < CURRENT_DATE THEN 'EXPIRED'
+			WHEN expiry_date <= (CURRENT_DATE + INTERVAL '30 days') THEN 'EXPIRING_SOON'
 			ELSE 'VALID'
 		END
 		WHERE expiry_date IS NOT NULL`)

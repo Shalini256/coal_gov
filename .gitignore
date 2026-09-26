@@ -1,9 +1,7 @@
 # Environment & Secret variables
 .env
-.env.local
-.env.*.local
-backend/.env
-ai-service/.env
+.env.*
+!.env.example
 
 # Python Virtual Environments & Caches
 .venv/

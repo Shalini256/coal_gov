@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -185,7 +186,7 @@ type manualViolationRequest struct {
 	InspectionID *int   `json:"inspection_id"`
 	Description  string `json:"description" binding:"required"`
 	Severity     string `json:"severity" binding:"required"` // LOW, MEDIUM, HIGH, CRITICAL
-	Deadline     string `json:"deadline"`                   // YYYY-MM-DD
+	Deadline     string `json:"deadline"`                    // YYYY-MM-DD
 }
 
 // CreateViolation handles direct manual logging of a compliance breach.
@@ -442,3 +443,64 @@ func (vc *ViolationsController) CheckSLAs(c *gin.Context) {
 	utils.Success(c, http.StatusOK, "SLA escalation evaluation completed successfully", result)
 }
 
+type dismissViolationRequest struct {
+	Reason string `json:"reason" binding:"required"`
+}
+
+// DismissViolation handles dismissing an open violation directly.
+func (vc *ViolationsController) DismissViolation(c *gin.Context) {
+	id := c.Param("id")
+	violationID, err := strconv.Atoi(id)
+	if err != nil {
+		utils.Fail(c, http.StatusBadRequest, "Invalid violation ID", err.Error())
+		return
+	}
+
+	var req dismissViolationRequest
+	if err := c.ShouldBindJSON(&req); err != nil || len(strings.TrimSpace(req.Reason)) < 10 {
+		utils.Fail(c, http.StatusBadRequest, "Dismissal reason must be at least 10 characters", "reason too short or missing")
+		return
+	}
+
+	userIDVal, _ := c.Get(middleware.CtxUserID)
+	userID := userIDVal.(int)
+
+	// Fetch current violation record
+	var currentStatus, currentCode string
+	err = database.DB.QueryRow(`SELECT status, violation_code FROM violations WHERE id = ?`, violationID).Scan(&currentStatus, &currentCode)
+	if err == sql.ErrNoRows {
+		utils.Fail(c, http.StatusNotFound, "Violation not found", "not found")
+		return
+	} else if err != nil {
+		utils.Fail(c, http.StatusInternalServerError, "Database query failed", err.Error())
+		return
+	}
+
+	// Check if there are active or assigned corrective actions
+	var caCount int
+	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM corrective_actions WHERE violation_id = ? AND status IN ('ASSIGNED', 'SUBMITTED', 'IN_PROGRESS')`, violationID).Scan(&caCount)
+
+	if caCount > 0 {
+		utils.Fail(c, http.StatusBadRequest, "Cannot dismiss violation: active corrective action(s) are already assigned or in progress", "active corrective action exists")
+		return
+	}
+
+	// Update status to DISMISSED
+	_, err = database.DB.Exec(`UPDATE violations SET status = 'DISMISSED', updated_at = NOW() WHERE id = ?`, violationID)
+	if err != nil {
+		utils.Fail(c, http.StatusInternalServerError, "Failed to dismiss violation", err.Error())
+		return
+	}
+
+	// Audit log
+	utils.LogAudit(userID, "VIOLATION_DISMISSED", "VIOLATIONS", currentCode, map[string]interface{}{
+		"violation_id": violationID,
+		"reason":       req.Reason,
+	}, c.ClientIP())
+
+	utils.Success(c, http.StatusOK, "Violation dismissed successfully", gin.H{
+		"id":     violationID,
+		"status": "DISMISSED",
+		"reason": req.Reason,
+	})
+}

@@ -45,14 +45,14 @@ func HaversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
 }
 
 type selfCheckinRequest struct {
-	MineID             int      `json:"mine_id" binding:"required"`
-	WorkerID           int      `json:"worker_id" binding:"required"`
-	Lat                float64  `json:"lat" binding:"required"`
-	Lng                float64  `json:"lng" binding:"required"`
-	IsMockLocation     bool     `json:"is_mock_location"`
-	DeviceUptimeMs     *int64   `json:"device_uptime_ms"`
-	ClientReportedTime *string  `json:"client_reported_time"`
-	LivenessPassed     *bool    `json:"liveness_passed"`
+	MineID             int     `json:"mine_id" binding:"required"`
+	WorkerID           int     `json:"worker_id" binding:"required"`
+	Lat                float64 `json:"lat" binding:"required"`
+	Lng                float64 `json:"lng" binding:"required"`
+	IsMockLocation     bool    `json:"is_mock_location"`
+	DeviceUptimeMs     *int64  `json:"device_uptime_ms"`
+	ClientReportedTime *string `json:"client_reported_time"`
+	LivenessPassed     *bool   `json:"liveness_passed"`
 }
 
 // SelfCheckin handles mobile/web worker self-attendance verification with multi-vector anti-spoofing defense.
@@ -188,16 +188,16 @@ func (ac *AttendanceController) SelfCheckin(c *gin.Context) {
 			checkin_lat, checkin_lng, distance_from_mine_m, is_mock_location,
 			device_uptime_ms, client_reported_time, tamper_flag, marked_by
 		) VALUES (?, ?, ?, 'PRESENT', 'GENERAL', 0.0, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE
-			status = 'PRESENT',
-			checkin_lat = VALUES(checkin_lat),
-			checkin_lng = VALUES(checkin_lng),
-			distance_from_mine_m = VALUES(distance_from_mine_m),
-			is_mock_location = VALUES(is_mock_location),
-			device_uptime_ms = VALUES(device_uptime_ms),
-			client_reported_time = VALUES(client_reported_time),
-			tamper_flag = VALUES(tamper_flag) OR tamper_flag,
-			marked_by = VALUES(marked_by)`,
+		ON CONFLICT (mine_id, worker_id, record_date) DO UPDATE SET
+			status = EXCLUDED.status,
+			checkin_lat = EXCLUDED.checkin_lat,
+			checkin_lng = EXCLUDED.checkin_lng,
+			distance_from_mine_m = EXCLUDED.distance_from_mine_m,
+			is_mock_location = EXCLUDED.is_mock_location,
+			device_uptime_ms = EXCLUDED.device_uptime_ms,
+			client_reported_time = EXCLUDED.client_reported_time,
+			tamper_flag = EXCLUDED.tamper_flag OR attendance.tamper_flag,
+			marked_by = EXCLUDED.marked_by`,
 		req.MineID, req.WorkerID, recordDate,
 		req.Lat, req.Lng, distanceM, req.IsMockLocation,
 		req.DeviceUptimeMs, clientReportedTimeVal, tamperFlag, markedByVal)
@@ -208,7 +208,7 @@ func (ac *AttendanceController) SelfCheckin(c *gin.Context) {
 	prevErr := database.DB.QueryRow(`
 		SELECT lat, lng, recorded_at 
 		FROM attendance_checkin_events 
-		WHERE worker_id = ? AND id != ? AND recorded_at >= DATE_SUB(?, INTERVAL 60 MINUTE)
+		WHERE worker_id = ? AND id != ? AND recorded_at >= ? - INTERVAL '60 minutes'
 		ORDER BY recorded_at DESC LIMIT 1`,
 		req.WorkerID, eventID, now).Scan(&prevLat, &prevLng, &prevRecordedAt)
 
@@ -232,7 +232,7 @@ func (ac *AttendanceController) SelfCheckin(c *gin.Context) {
 		SELECT COUNT(DISTINCT worker_id)
 		FROM attendance_checkin_events
 		WHERE mine_id = ? 
-		  AND recorded_at >= DATE_SUB(?, INTERVAL 5 SECOND)
+		  AND recorded_at >= ? - INTERVAL '5 seconds'
 		  AND (lat BETWEEN ? - 0.0001 AND ? + 0.0001)
 		  AND (lng BETWEEN ? - 0.0001 AND ? + 0.0001)`,
 		req.MineID, now, req.Lat, req.Lat, req.Lng, req.Lng).Scan(&clusterCount)
@@ -268,15 +268,15 @@ func (ac *AttendanceController) SelfCheckin(c *gin.Context) {
 }
 
 type markAttendanceRequest struct {
-	MineID        int      `json:"mine_id" binding:"required"`
-	WorkerID      *int     `json:"worker_id"`
-	RecordDate    string   `json:"record_date"` // YYYY-MM-DD
-	Status        string   `json:"status"`      // PRESENT, ABSENT, LEAVE, HALF_DAY
-	Shift         string   `json:"shift"`       // GENERAL, SHIFT_1, SHIFT_2, SHIFT_3
-	OvertimeHours float64  `json:"overtime_hours"`
-	PresentCount  *int     `json:"present_count"`
-	TotalCount    *int     `json:"total_count"`
-	WorkerIDs     []int    `json:"worker_ids"`  // for batch marking
+	MineID        int     `json:"mine_id" binding:"required"`
+	WorkerID      *int    `json:"worker_id"`
+	RecordDate    string  `json:"record_date"` // YYYY-MM-DD
+	Status        string  `json:"status"`      // PRESENT, ABSENT, LEAVE, HALF_DAY
+	Shift         string  `json:"shift"`       // GENERAL, SHIFT_1, SHIFT_2, SHIFT_3
+	OvertimeHours float64 `json:"overtime_hours"`
+	PresentCount  *int    `json:"present_count"`
+	TotalCount    *int    `json:"total_count"`
+	WorkerIDs     []int   `json:"worker_ids"` // for batch marking
 }
 
 // MarkAttendance handles individual or batch worker attendance marking.
@@ -314,7 +314,11 @@ func (ac *AttendanceController) MarkAttendance(c *gin.Context) {
 			_, err = tx.Exec(`
 				INSERT INTO attendance (mine_id, worker_id, record_date, status, shift, overtime_hours, marked_by)
 				VALUES (?, ?, ?, ?, ?, ?, ?)
-				ON DUPLICATE KEY UPDATE status = VALUES(status), shift = VALUES(shift), overtime_hours = VALUES(overtime_hours), marked_by = VALUES(marked_by)`,
+				ON CONFLICT (mine_id, worker_id, record_date) DO UPDATE SET
+					status = EXCLUDED.status,
+					shift = EXCLUDED.shift,
+					overtime_hours = EXCLUDED.overtime_hours,
+					marked_by = EXCLUDED.marked_by`,
 				req.MineID, wID, req.RecordDate, req.Status, req.Shift, req.OvertimeHours, userID)
 			if err != nil {
 				utils.Fail(c, http.StatusInternalServerError, "Failed to mark batch attendance", err.Error())
@@ -728,4 +732,3 @@ func (ac *AttendanceController) ListCheckinEvents(c *gin.Context) {
 
 	utils.Success(c, http.StatusOK, "Checkin events fetched", events)
 }
-

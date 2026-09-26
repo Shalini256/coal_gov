@@ -83,7 +83,7 @@ func (ac *AnalyticsController) GetChartsData(c *gin.Context) {
 
 	// 4. Mine Risk Rankings
 	mineRankRows, err := database.DB.Query(`
-		SELECT m.mine_name, IFNULL(r.score, 0)
+		SELECT m.mine_name, COALESCE(r.score, 0)
 		FROM mines m
 		LEFT JOIN risk_scores r ON r.mine_id = m.id AND r.computed_at = (SELECT MAX(computed_at) FROM risk_scores WHERE mine_id = m.id)
 		ORDER BY r.score DESC, m.mine_name ASC
@@ -105,7 +105,7 @@ func (ac *AnalyticsController) GetChartsData(c *gin.Context) {
 
 	// 5. Compliance Trend (dynamic past 6 months of inspections)
 	complianceTrendRows, err := database.DB.Query(`
-		SELECT DATE_FORMAT(inspection_date, '%b %Y') as month_yr,
+		SELECT TO_CHAR(inspection_date, 'Mon YYYY') as month_yr,
 		       SUM(CASE WHEN status='APPROVED' THEN 1 ELSE 0 END) as approved_count,
 		       COUNT(*) as total_count
 		FROM inspections
@@ -134,7 +134,7 @@ func (ac *AnalyticsController) GetChartsData(c *gin.Context) {
 
 	// 6. Inspection Trend
 	inspectionTrendRows, err := database.DB.Query(`
-		SELECT DATE_FORMAT(inspection_date, '%b %Y') as month_yr, COUNT(*)
+		SELECT TO_CHAR(inspection_date, 'Mon YYYY') as month_yr, COUNT(*)
 		FROM inspections
 		GROUP BY month_yr
 		ORDER BY MIN(inspection_date) ASC
@@ -164,13 +164,13 @@ func (ac *AnalyticsController) GetChartsData(c *gin.Context) {
 	}
 
 	utils.Success(c, http.StatusOK, "Charts data loaded", gin.H{
-		"violations_by_category":     vioCategories,
-		"corrective_actions_status":  caStatuses,
-		"risk_distribution":          riskDist,
-		"mine_risk_ranking":          mineRanks,
-		"compliance_trend":           complianceTrend,
-		"inspections_trend":          inspectionsTrend,
-		"incidents_trend":            incidentTrend,
+		"violations_by_category":    vioCategories,
+		"corrective_actions_status": caStatuses,
+		"risk_distribution":         riskDist,
+		"mine_risk_ranking":         mineRanks,
+		"compliance_trend":          complianceTrend,
+		"inspections_trend":         inspectionsTrend,
+		"incidents_trend":           incidentTrend,
 	})
 }
 
@@ -245,7 +245,7 @@ func (ac *AnalyticsController) HandleVoiceQuery(c *gin.Context) {
 
 	// Context Gathering: Fetch current mines and risk scores
 	mineRankRows, err := database.DB.Query(`
-		SELECT m.id, m.mine_name, m.mine_code, IFNULL(m.state, ''), IFNULL(m.mine_type, 'OPENCAST'), IFNULL(r.score, 0)
+		SELECT m.id, m.mine_name, m.mine_code, COALESCE(m.state, ''), COALESCE(m.mine_type, 'OPENCAST'), COALESCE(r.score, 0)
 		FROM mines m
 		LEFT JOIN risk_scores r ON r.mine_id = m.id AND r.computed_at = (SELECT MAX(computed_at) FROM risk_scores WHERE mine_id = m.id)
 		WHERE m.status = 'ACTIVE'
@@ -298,13 +298,13 @@ func (ac *AnalyticsController) HandleVoiceQuery(c *gin.Context) {
 	// Fetch worker metrics
 	var totalWorkers, presentToday int
 	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM workers WHERE status = 'ACTIVE'`).Scan(&totalWorkers)
-	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM attendance WHERE record_date = CURDATE() AND status = 'PRESENT'`).Scan(&presentToday)
+	_ = database.DB.QueryRow(`SELECT COUNT(*) FROM attendance WHERE record_date = CURRENT_DATE AND status = 'PRESENT'`).Scan(&presentToday)
 
 	// Fetch latest production total
 	var todayProd float64
-	_ = database.DB.QueryRow(`SELECT IFNULL(SUM(production_tonnes), 0) FROM operational_data WHERE record_date = CURDATE()`).Scan(&todayProd)
+	_ = database.DB.QueryRow(`SELECT COALESCE(SUM(production_tonnes), 0) FROM operational_data WHERE record_date = CURRENT_DATE`).Scan(&todayProd)
 	if todayProd == 0 {
-		_ = database.DB.QueryRow(`SELECT IFNULL(SUM(production_tonnes), 0) FROM operational_data WHERE record_date = (SELECT MAX(record_date) FROM operational_data)`).Scan(&todayProd)
+		_ = database.DB.QueryRow(`SELECT COALESCE(SUM(production_tonnes), 0) FROM operational_data WHERE record_date = (SELECT MAX(record_date) FROM operational_data)`).Scan(&todayProd)
 	}
 
 	// Fetch active anomalies and incidents
@@ -339,7 +339,7 @@ func (ac *AnalyticsController) HandleVoiceQuery(c *gin.Context) {
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	body, _ := io.ReadAll(resp.Body)
 	var aiResult map[string]interface{}
 	json.Unmarshal(body, &aiResult)
@@ -496,7 +496,7 @@ func (ac *AnalyticsController) RecalculateRiskForMines() error {
 		_ = database.DB.QueryRow(`
 			SELECT COUNT(*) FROM environmental_data 
 			WHERE mine_id = ? 
-			  AND record_date >= DATE_SUB(NOW(), INTERVAL 7 DAY) 
+			  AND record_date >= NOW() - INTERVAL '7 days'
 			  AND (aqi > 150 OR water_quality_index < 65 OR dust_level > 200)`, mine.ID).Scan(&envAlerts)
 
 		// Recurring violation in same category (>= 3 violations in past 30 days)
@@ -506,9 +506,9 @@ func (ac *AnalyticsController) RecalculateRiskForMines() error {
 			SELECT cc.name, COUNT(*) as cnt 
 			FROM violations v 
 			JOIN compliance_categories cc ON cc.id = v.category_id 
-			WHERE v.mine_id = ? AND v.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) 
+			WHERE v.mine_id = ? AND v.created_at >= NOW() - INTERVAL '30 days'
 			GROUP BY cc.id 
-			HAVING cnt >= 3 
+			HAVING COUNT(*) >= 3
 			LIMIT 1`, mine.ID).Scan(&recurringCat, &recurringCount)
 
 		stats := map[string]interface{}{
@@ -530,7 +530,7 @@ func (ac *AnalyticsController) RecalculateRiskForMines() error {
 
 		// Call AI Flask service
 		aiURL := fmt.Sprintf("%s/predict-risk", ac.Cfg.AIServiceURL)
-		
+
 		var score float64
 		var classification string
 		var factorsJSON []byte
@@ -538,11 +538,11 @@ func (ac *AnalyticsController) RecalculateRiskForMines() error {
 		// Post HTTP request to python service
 		client := &http.Client{Timeout: 2 * time.Second}
 		resp, postErr := client.Post(aiURL, "application/json", bytes.NewBuffer(jsonBytes))
-		
+
 		if postErr == nil && resp.StatusCode == http.StatusOK {
 			defer resp.Body.Close()
 			bodyBytes, _ := io.ReadAll(resp.Body)
-			
+
 			type aiResponse struct {
 				Success bool   `json:"success"`
 				Message string `json:"message"`
@@ -552,7 +552,7 @@ func (ac *AnalyticsController) RecalculateRiskForMines() error {
 					Factors        []interface{} `json:"factors"`
 				} `json:"data"`
 			}
-			
+
 			var aiRes aiResponse
 			if err := json.Unmarshal(bodyBytes, &aiRes); err == nil && aiRes.Success {
 				score = aiRes.Data.Score
@@ -606,26 +606,26 @@ func (ac *AnalyticsController) RecalculateRiskForMines() error {
 		// Write to database
 		_, _ = database.DB.Exec(`
 			INSERT INTO risk_scores (mine_id, score, classification, factors_json) 
-			VALUES (?, ?, ?, ?)`, 
+			VALUES (?, ?, ?, ?)`,
 			mine.ID, score, classification, string(factorsJSON))
 	}
 	return nil
 }
 
 type recurringViolationItem struct {
-	MineID            int    `json:"mine_id"`
-	MineName          string `json:"mine_name"`
-	CategoryID        int    `json:"category_id"`
-	CategoryName      string `json:"category_name"`
-	TotalViolations   int    `json:"total_violations"`
-	CriticalCount     int    `json:"critical_count"`
-	HighCount         int    `json:"high_count"`
-	MediumCount       int    `json:"medium_count"`
-	OpenCount         int    `json:"open_count"`
-	FirstDetected     string `json:"first_detected"`
-	LatestDetected    string `json:"latest_detected"`
-	RepeatLevel       string `json:"repeat_level"` // MODERATE, CHRONIC, SEVERE
-	RiskScorePenalty  int    `json:"risk_score_penalty"`
+	MineID           int    `json:"mine_id"`
+	MineName         string `json:"mine_name"`
+	CategoryID       int    `json:"category_id"`
+	CategoryName     string `json:"category_name"`
+	TotalViolations  int    `json:"total_violations"`
+	CriticalCount    int    `json:"critical_count"`
+	HighCount        int    `json:"high_count"`
+	MediumCount      int    `json:"medium_count"`
+	OpenCount        int    `json:"open_count"`
+	FirstDetected    string `json:"first_detected"`
+	LatestDetected   string `json:"latest_detected"`
+	RepeatLevel      string `json:"repeat_level"` // MODERATE, CHRONIC, SEVERE
+	RiskScorePenalty int    `json:"risk_score_penalty"`
 }
 
 // GetRecurringViolations analyzes violations grouped by mine and category/rule across a rolling time window.
@@ -650,7 +650,7 @@ func (ac *AnalyticsController) GetRecurringViolations(c *gin.Context) {
 		FROM violations v
 		JOIN mines m ON m.id = v.mine_id
 		JOIN compliance_categories cc ON cc.id = v.category_id
-		WHERE v.created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)`, windowDays)
+		WHERE v.created_at >= NOW() - (%d * INTERVAL '1 day')`, windowDays)
 
 	args := []interface{}{}
 	if mineID != "" {
@@ -714,4 +714,3 @@ func (ac *AnalyticsController) GetRecurringViolations(c *gin.Context) {
 		"recurring_violations":   list,
 	})
 }
-

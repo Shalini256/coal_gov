@@ -2,8 +2,6 @@
 -- SEED DATA
 -- All demo accounts use password: Coal@2026
 -- =====================================================================
-USE coal_governance;
-
 INSERT INTO roles (role_key, role_name, description) VALUES
 ('SUPER_ADMIN',        'Super Administrator',   'Full system access: users, subsidiaries, mines, compliance rules'),
 ('MINE_MANAGER',       'Mine Manager',          'Manages inspections, violations and corrective actions for assigned mine(s)'),
@@ -82,12 +80,12 @@ INSERT INTO workers (mine_id, worker_code, full_name, designation, department_id
 
 -- 19. ATTENDANCE
 INSERT INTO attendance (mine_id, worker_id, record_date, status, shift, overtime_hours, present_count, total_count, marked_by) VALUES
-(1, 1, CURDATE(), 'PRESENT', 'SHIFT_1', 0.00, NULL, NULL, 3),
-(1, 2, CURDATE(), 'PRESENT', 'SHIFT_1', 1.50, NULL, NULL, 3),
-(1, 3, CURDATE(), 'PRESENT', 'GENERAL', 0.00, NULL, NULL, 3),
-(1, 4, CURDATE(), 'LEAVE',   'SHIFT_2', 0.00, NULL, NULL, 3),
-(2, 5, CURDATE(), 'PRESENT', 'SHIFT_1', 0.00, NULL, NULL, 2),
-(1, NULL, CURDATE(), 'PRESENT', 'GENERAL', 0.00, 480, 520, 2);
+(1, 1, CURRENT_DATE, 'PRESENT', 'SHIFT_1', 0.00, NULL, NULL, 3),
+(1, 2, CURRENT_DATE, 'PRESENT', 'SHIFT_1', 1.50, NULL, NULL, 3),
+(1, 3, CURRENT_DATE, 'PRESENT', 'GENERAL', 0.00, NULL, NULL, 3),
+(1, 4, CURRENT_DATE, 'LEAVE',   'SHIFT_2', 0.00, NULL, NULL, 3),
+(2, 5, CURRENT_DATE, 'PRESENT', 'SHIFT_1', 0.00, NULL, NULL, 2),
+(1, NULL, CURRENT_DATE, 'PRESENT', 'GENERAL', 0.00, 480, 520, 2);
 
 -- 25. GRIEVANCES
 INSERT INTO grievances (worker_id, mine_id, category, description, status, assigned_to, resolution_notes) VALUES
@@ -97,17 +95,17 @@ INSERT INTO grievances (worker_id, mine_id, category, description, status, assig
 
 -- 17. OPERATIONAL DATA
 INSERT INTO operational_data (mine_id, record_date, production_tonnes, expected_production, equipment_health_pct, attendance_pct) VALUES
-(1, DATE_SUB(CURDATE(), INTERVAL 2 DAY), 98000.00, 100000.00, 94.50, 92.30),
-(1, DATE_SUB(CURDATE(), INTERVAL 1 DAY), 102000.00, 100000.00, 96.00, 94.10),
-(1, CURDATE(), 99500.00, 100000.00, 95.20, 93.80),
-(2, CURDATE(), 78000.00, 80000.00, 91.00, 88.50);
+(1, CURRENT_DATE - INTERVAL '2 days', 98000.00, 100000.00, 94.50, 92.30),
+(1, CURRENT_DATE - INTERVAL '1 days', 102000.00, 100000.00, 96.00, 94.10),
+(1, CURRENT_DATE, 99500.00, 100000.00, 95.20, 93.80),
+(2, CURRENT_DATE, 78000.00, 80000.00, 91.00, 88.50);
 
 -- 18. ENVIRONMENTAL DATA
 INSERT INTO environmental_data (mine_id, record_date, aqi, water_quality_index, noise_level_db, dust_level) VALUES
-(1, DATE_SUB(CURDATE(), INTERVAL 2 DAY), 142.50, 78.20, 68.40, 120.50),
-(1, DATE_SUB(CURDATE(), INTERVAL 1 DAY), 155.00, 76.50, 71.20, 135.00),
-(1, CURDATE(), 138.20, 81.00, 66.80, 115.30),
-(2, CURDATE(), 168.00, 72.00, 74.50, 148.00);
+(1, CURRENT_DATE - INTERVAL '2 days', 142.50, 78.20, 68.40, 120.50),
+(1, CURRENT_DATE - INTERVAL '1 days', 155.00, 76.50, 71.20, 135.00),
+(1, CURRENT_DATE, 138.20, 81.00, 66.80, 115.30),
+(2, CURRENT_DATE, 168.00, 72.00, 74.50, 148.00);
 
 -- 20. DOCUMENTS & OCR SEED DATA
 INSERT INTO documents (
@@ -180,6 +178,8 @@ INSERT INTO mesh_nodes (mine_id, zone_id, node_name, hop_sequence, battery_pct, 
 (10, 5, 'NODE-04-SHAFT-BOTTOM', 4, 94.00, 'ONLINE'),
 (10, 5, 'NODE-05-PITHEAD-TOWER',5, 99.00, 'ONLINE'),
 (10, 5, 'NODE-06-SURFACE-GW',   6, 100.00, 'ONLINE');
+
+SELECT setval(pg_get_serial_sequence('mine_zones', 'id'), COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM mine_zones;
 
 
 

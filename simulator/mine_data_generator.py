@@ -1,7 +1,7 @@
 import time
 import os
 import random
-import mysql.connector
+import psycopg2
 from dotenv import load_dotenv
 
 # Search for .env files to load DB credentials
@@ -10,8 +10,8 @@ load_dotenv(os.path.join(root_path, "backend", ".env"))
 load_dotenv(os.path.join(root_path, ".env"))
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = os.getenv("DB_PORT", "3306")
-DB_USER = os.getenv("DB_USER", "root")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "coal_governance")
 
@@ -27,9 +27,9 @@ def get_current_mode():
     return "NORMAL_MODE"
 
 def connect_db():
-    return mysql.connector.connect(
+    return psycopg2.connect(
         host=DB_HOST,
-        port=DB_PORT,
+        port=int(DB_PORT),
         user=DB_USER,
         password=DB_PASSWORD,
         database=DB_NAME
@@ -126,7 +126,7 @@ def generate_telemetry():
                             # Generate a Critical safety violation
                             cursor.execute("""
                                 INSERT INTO violations (violation_code, mine_id, category_id, description, severity, reported_by, deadline, status)
-                                VALUES ('VIO-2026-909', 1, 1, 'Critical machinery guarding missing on Crusher belt #3.', 'CRITICAL', 3, DATE_SUB(CURDATE(), INTERVAL 1 DAY), 'OPEN')""")
+                                VALUES ('VIO-2026-909', 1, 1, 'Critical machinery guarding missing on Crusher belt #3.', 'CRITICAL', 3, CURRENT_DATE - 1, 'OPEN')""")
                             db.commit()
                             print(f"[VIOLATION TRIGGERED] Created critical open violation for Gevra")
                 
@@ -138,21 +138,21 @@ def generate_telemetry():
                 cursor.execute("""
                     INSERT INTO operational_data (mine_id, record_date, production_tonnes, expected_production, equipment_health_pct, attendance_pct)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE 
-                        production_tonnes = VALUES(production_tonnes),
-                        equipment_health_pct = VALUES(equipment_health_pct),
-                        attendance_pct = VALUES(attendance_pct)""",
+                    ON CONFLICT (mine_id, record_date) DO UPDATE SET
+                        production_tonnes = EXCLUDED.production_tonnes,
+                        equipment_health_pct = EXCLUDED.equipment_health_pct,
+                        attendance_pct = EXCLUDED.attendance_pct""",
                     (mine_id, record_date, actual_production, expected_daily, equip_health, att_pct))
                 
                 # Write to environmental_data
                 cursor.execute("""
                     INSERT INTO environmental_data (mine_id, record_date, aqi, water_quality_index, noise_level_db, dust_level)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE 
-                        aqi = VALUES(aqi),
-                        water_quality_index = VALUES(water_quality_index),
-                        noise_level_db = VALUES(noise_level_db),
-                        dust_level = VALUES(dust_level)""",
+                    ON CONFLICT (mine_id, record_date) DO UPDATE SET
+                        aqi = EXCLUDED.aqi,
+                        water_quality_index = EXCLUDED.water_quality_index,
+                        noise_level_db = EXCLUDED.noise_level_db,
+                        dust_level = EXCLUDED.dust_level""",
                     (mine_id, record_date, aqi, wqi, noise, dust))
                 
             # Simulate Underground Mesh Network Nodes Telemetry

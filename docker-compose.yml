@@ -1,21 +1,20 @@
-version: "3.9"
-
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: coal-governance-mysql
+  postgres:
+    image: postgres:16-alpine
+    container_name: coal-governance-postgres
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-change_me}
-      MYSQL_DATABASE: coal_governance
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_me}
+      POSTGRES_DB: ${DB_NAME:-coal_governance}
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
-      - ./database/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD:-change_me}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-coal_governance}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -26,13 +25,13 @@ services:
     container_name: coal-governance-backend
     restart: unless-stopped
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     environment:
       APP_PORT: 8080
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USER: root
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-change_me}
       DB_NAME: coal_governance
       JWT_SECRET: ${JWT_SECRET:-change_me_to_a_long_random_string}
@@ -48,15 +47,6 @@ services:
       context: ./ai-service
     container_name: coal-governance-ai
     restart: unless-stopped
-    depends_on:
-      mysql:
-        condition: service_healthy
-    environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD:-change_me}
-      DB_NAME: coal_governance
     ports:
       - "5000:5000"
 
@@ -70,4 +60,4 @@ services:
       - ./frontend:/usr/share/nginx/html:ro
 
 volumes:
-  mysql_data:
+  postgres_data:

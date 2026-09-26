@@ -11,7 +11,7 @@ Frontend (HTML/CSS/JS, Chart.js, Leaflet)
     v
 Go Backend (Gin)
     |
-    +--- MySQL 8+           (all transactional & governance data)
+   +--- PostgreSQL 16+     (all transactional & governance data)
     +--- Python AI Service  (risk scoring, anomaly detection — Phase 4)
     +--- File Storage       (evidence photos, OCR'd documents)
     +--- Notification Layer (in-app alerts, escalation triggers)
@@ -23,7 +23,7 @@ Go Backend (Gin)
 backend/
 ├── main.go            Application entrypoint, CORS, router wiring
 ├── config/            Environment variable loading
-├── database/          MySQL connection pool
+├── database/          PostgreSQL connection pool
 ├── models/            Struct definitions mirroring DB tables
 ├── controllers/       Request handlers (one file per module)
 ├── middleware/         JWT auth + RBAC role guards
@@ -46,7 +46,7 @@ backend/
 
 ## Database Design Principles
 
-- Every table uses `AUTO_INCREMENT` primary keys, explicit foreign keys, and
+- Tables use PostgreSQL identity-backed primary keys, explicit foreign keys, and
   `created_at`/`updated_at` timestamps (see `database/schema.sql`).
 - Status fields use `ENUM` types matching the workflow states defined in the
   problem statement (e.g. violation status: OPEN → IN_PROGRESS → RESOLVED →

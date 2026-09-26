@@ -16,6 +16,22 @@ from anomaly_detection.detector import detect_anomalies
 
 app = Flask(__name__)
 
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({
+        "success": True,
+        "message": "AI service is running",
+        "endpoints": [
+            "/health",
+            "/predict-risk",
+            "/detect-anomalies",
+            "/ocr",
+            "/ai/analyze-inspection",
+            "/ai/voice-assistant",
+            "/ai/translate"
+        ]
+    })
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
